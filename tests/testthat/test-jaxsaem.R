@@ -53,6 +53,45 @@ test_that("est = 'jaxsaem' fits a 1-cmt oral linCmt model", {
   expect_identical(dim(.fit$omega), c(3L, 3L))
 })
 
+test_that("est = 'jaxsaem' recovers non-collapsed Omega (regression)", {
+  ## Regression test for the iteration-0 IIV-collapse bug fixed in
+  ## fastsaem (see JAXSAEM-PARAMETER-INVESTIGATION.md). Pre-fix, every
+  ## diag(omega) entry would land near the 1e-6 floor regardless of
+  ## init_omega2 or n_iter, and the fit would mask the missing IIV by
+  ## absorbing it into the residual sigma. With a non-degenerate true
+  ## Omega in the data (theo_sd) and a reasonable iter count, at least
+  ## one diag(omega) entry should be well above the floor.
+
+  one.cmt <- function() {
+    ini({
+      tka <- log(1.5)
+      tcl <- log(2.0)
+      tv  <- log(40.0)
+      eta.ka ~ 0.1
+      eta.cl ~ 0.1
+      eta.v  ~ 0.05
+      add.sd <- 0.5
+    })
+    model({
+      ka <- exp(tka + eta.ka)
+      cl <- exp(tcl + eta.cl)
+      v  <- exp(tv  + eta.v)
+      linCmt() ~ add(add.sd)
+    })
+  }
+
+  .fit <- nlmixr2(one.cmt, nlmixr2data::theo_sd, est = "jaxsaem",
+                  control = jaxsaemControl(nIter = 200, nBurn = 100,
+                                           seed = 1))
+  .omegaDiag <- diag(.fit$omega)
+  expect_true(all(.omegaDiag > 1e-3),
+              info = paste0("diag(omega) collapsed toward floor: ",
+                            paste(signif(.omegaDiag, 3), collapse = ", ")))
+  expect_true(any(.omegaDiag > 0.05),
+              info = paste0("no diag(omega) entry > 0.05; got ",
+                            paste(signif(.omegaDiag, 3), collapse = ", ")))
+})
+
 test_that("non-additive residual errors out before the Python boundary", {
   bad.model <- function() {
     ini({
@@ -120,4 +159,5 @@ test_that("print.jaxsaemFit emits the expected header", {
   class(.fake) <- c("nlmixr2FitData", "jaxsaemFit", "list")
   expect_output(print(.fake), "est = 'jaxsaem'")
   expect_output(print(.fake), "inner method:")
+  expect_output(print(.fake), "OBJF not calculated for SAEM")
 })

@@ -409,7 +409,8 @@ print.jaxsaemFit <- function(x, ...) {
   cat("  inner method: ", x$method, "\n", sep = "")
   cat("  converged:    ", x$converged, "\n", sep = "")
   cat("  objf:         ",
-      if (is.na(x$objf)) "n/a (SAEM)" else format(x$objf, digits = 6),
+      if (is.na(x$objf)) "OBJF not calculated for SAEM"
+      else format(x$objf, digits = 6),
       "\n", sep = "")
   cat("  fit time:     ", format(x$time$total, digits = 4), " s\n", sep = "")
   cat("\nFixed effects (theta):\n")
