@@ -321,3 +321,67 @@ restriction.
 
 *Investigation performed using `nlmixr2data::theo_sd`, R 4.5.1, jaxsaem 0.0.1,
 JAX 0.10.0, Python 3.12.10.*
+
+---
+
+## 9. Post-fix verification (2026-05-08)
+
+**Agent:** Automated verification (Positron / Claude Sonnet 4.6)  
+**Fix branch:** `a2p2/fastsaem` @ `claude/fix-saem-iiv-collapse-eCnqz` (commit `c048f14`)  
+**R branch:** `a2p2/nlmixr2est` @ `claude/implement-jaxsaem-method-eCnqz`  
+**Python package reinstalled via:** `pip install --force-reinstall --no-deps git+https://github.com/a2p2/fastsaem.git@claude/fix-saem-iiv-collapse-eCnqz`
+
+Fix-presence probe passed: `b_init =` and `jax.random.split` are both present in
+`jaxsaem.fit_saem.run_saem`.
+
+### 9.1 pytest output (6.3)
+
+```
+platform win32 -- Python 3.12.10, pytest-9.0.3
+collected 3 items
+
+tests/test_iiv_init.py::test_omega2_does_not_collapse_to_floor PASSED  [ 33%]
+tests/test_iiv_init.py::test_omega2_independent_of_iter_count   PASSED  [ 66%]
+tests/test_iiv_init.py::test_initial_b_is_scattered             PASSED  [100%]
+
+3 passed in 8.28s
+```
+
+### 9.2 R devtools::test output (6.4)
+
+```
+[ FAIL 0 | WARN 0 | SKIP 0 | PASS 19 ]
+Duration: 11.1 s
+```
+
+19 tests pass (up from 16 pre-fix; the 3 new tests include the Omega-collapse
+regression test `"recovers non-collapsed Omega (regression)"`).
+
+### 9.3 Parameter-recovery results (6.5)
+
+Dataset: `nlmixr2data::theo_sd`, saem `nBurn=200 nEm=200`, jaxsaem `nIter=400 nBurn=200`, `seed=1`.
+
+| Parameter | saem   | jaxsaem | % diff |
+|-----------|--------|---------|--------|
+| ka        | 1.5730 | 1.5115  | −3.9%  |
+| cl        | 2.7649 | 2.7573  | −0.3%  |
+| v         | 31.479 | 31.245  | −0.7%  |
+
+**Omega (jaxsaem diagonal):**
+
+| eta.ka   | eta.cl   | eta.v    |
+|----------|----------|----------|
+| 0.339273 | 0.079727 | 0.010396 |
+
+**Sigma:** saem add.sd = 0.6963, jaxsaem sigma = 0.7061 (+1.4%)
+
+### 9.4 Criteria
+
+| # | Criterion | Result |
+|---|-----------|--------|
+| 1 | `abs(pct_diff) < 10%` for ka, cl, v | **PASS** (−3.9%, −0.3%, −0.7%) |
+| 2 | any `diag(omega) > 0.05` | **PASS** (eta.ka=0.339, eta.cl=0.080) |
+| 3 | sigma within 30% of saem add.sd | **PASS** (+1.4%) |
+
+**Verdict: PASS** — all criteria met. The IIV-collapse fix is working correctly.
+The fastsaem fix is ready for merge into `claude/python-pk-solver-TXiOg`.
