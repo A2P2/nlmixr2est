@@ -116,6 +116,148 @@ devtools::test(filter = "jaxsaem")
 Tests skip cleanly when `reticulate::py_module_available("jaxsaem")` is
 `FALSE`, so they are safe to run with or without the Python env active.
 
+## 6. Re-verify after the IIV-collapse fix (runbook for another agent)
+
+The 2026-05-08 investigation
+(`JAXSAEM-PARAMETER-INVESTIGATION.md`) traced the parameter-bias
+symptoms (CL ~28% low, Omega ~0) to an iteration-0 IIV-collapse bug in
+the Python package `jaxsaem`. The fix lives on a separate fastsaem
+branch and has not yet been merged. This section is a self-contained
+runbook for a follow-up agent (or human) to verify the fix end to end
+and update the investigation report. Run from a clean shell.
+
+### 6.1 Inputs
+
+- **R repo / branch**: `a2p2/nlmixr2est` @ `claude/implement-jaxsaem-method-eCnqz` (this branch).
+- **Python repo / branch**: `a2p2/fastsaem` @ `claude/fix-saem-iiv-collapse-eCnqz`.
+- **Reference dataset**: `nlmixr2data::theo_sd` (12 subjects, 1-cmt oral).
+
+The fastsaem branch contains two commits on top of `claude/python-pk-solver-TXiOg`:
+1. `cc063a3` -- scatter `b_init ~ N(init_mu, diag(init_omega2))` in
+   `jaxsaem/fit_saem.py`.
+2. `c048f14` -- regression tests in `tests/test_iiv_init.py`.
+
+### 6.2 Reinstall the patched Python side
+
+```bash
+source ~/jaxsaem-env/bin/activate   # whichever env was used in section 3
+pip install --force-reinstall --no-deps \
+    git+https://github.com/a2p2/fastsaem.git@claude/fix-saem-iiv-collapse-eCnqz
+
+python -c "from jaxsaem.fit_saem import run_saem; \
+           import inspect; \
+           src = inspect.getsource(run_saem); \
+           assert 'b_init = ' in src and 'jax.random.split' in src, \
+               'fix not present'; \
+           print('fix present')"
+```
+
+The assertion is the cheapest way to confirm `pip` actually pulled the
+patched branch and not a cached wheel. If it fails, force-reinstall
+again with `--no-cache-dir`.
+
+### 6.3 Run the Python regression tests
+
+```bash
+cd ~/checkouts                            # pick a working dir
+git clone --branch claude/fix-saem-iiv-collapse-eCnqz \
+    https://github.com/a2p2/fastsaem.git
+cd fastsaem
+pytest tests/test_iiv_init.py -v
+```
+
+**Pass criteria**: all three tests pass:
+- `test_omega2_does_not_collapse_to_floor`
+- `test_omega2_independent_of_iter_count`
+- `test_initial_b_is_scattered`
+
+If any fail, **do not** continue -- inspect the failure and report
+back. Pre-fix, all three should fail; post-fix, all three should pass.
+
+### 6.4 Re-run the R regression test
+
+```r
+## from the nlmixr2est repo root, branch claude/implement-jaxsaem-method-eCnqz
+useJaxsaem(python = "~/jaxsaem-env/bin/python")  # adjust path
+devtools::test(filter = "jaxsaem")
+```
+
+**Pass criteria**: all six `test-jaxsaem.R` tests pass, including the
+new `"recovers non-collapsed Omega (regression)"` test which asserts
+`diag(omega) > 1e-3` componentwise and at least one entry above 0.05.
+
+### 6.5 Parameter-recovery check vs nlmixr2 saem
+
+This is the qualitative end-to-end check that validated the original
+regression. Run both fitters on the same data and compare.
+
+```r
+library(nlmixr2est)
+useJaxsaem(python = "~/jaxsaem-env/bin/python")
+
+one.cmt <- function() {
+  ini({
+    tka <- log(1.5); tcl <- log(2); tv <- log(40)
+    eta.ka ~ 0.1;    eta.cl ~ 0.1;  eta.v ~ 0.05
+    add.sd <- 0.5
+  })
+  model({
+    ka <- exp(tka + eta.ka)
+    cl <- exp(tcl + eta.cl)
+    v  <- exp(tv  + eta.v)
+    linCmt() ~ add(add.sd)
+  })
+}
+
+dat <- nlmixr2data::theo_sd
+
+fit_saem <- suppressMessages(suppressWarnings(
+  nlmixr2(one.cmt, dat, est = "saem",
+          control = saemControl(nBurn = 200, nEm = 200, seed = 1, print = 0))
+))
+fit_jax  <- suppressMessages(suppressWarnings(
+  nlmixr2(one.cmt, dat, est = "jaxsaem",
+          control = jaxsaemControl(nIter = 400, nBurn = 200, seed = 1))
+))
+
+theta_saem <- exp(fit_saem$theta[c("tka", "tcl", "tv")])
+theta_jax  <- fit_jax$theta[c("ka", "cl", "v")]
+pct_diff   <- 100 * (theta_jax - theta_saem) / theta_saem
+
+print(round(rbind(saem = theta_saem, jax = theta_jax,
+                  pct_diff = pct_diff), 3))
+print(diag(fit_jax$omega))
+```
+
+**Pass criteria** (all must hold):
+1. `abs(pct_diff)` < 10% for `ka`, `cl`, and `v`.
+2. `diag(fit_jax$omega)` has at least one entry above 0.05 (matches
+   the saem omega magnitudes).
+3. `fit_jax$sigma` is in the same neighborhood as the saem add.sd
+   (within ~30%, not 2x larger).
+
+If criterion 1 holds for `ka` and `v` but `cl` is still ~28% low,
+the Python fix did not actually load -- repeat 6.2.
+
+### 6.6 Report results
+
+Append a new section to `JAXSAEM-PARAMETER-INVESTIGATION.md` titled
+**"9. Post-fix verification (YYYY-MM-DD)"** with:
+
+- The pytest output from 6.3.
+- The R `devtools::test()` output from 6.4.
+- The `pct_diff` and `diag(omega)` output from 6.5.
+- A one-line verdict: **PASS** (all criteria met) or **FAIL** (which
+  criterion, with values).
+
+Commit it as `docs: post-fix verification of IIV collapse` on this
+nlmixr2est branch. Do not modify the original investigation sections
+(1-8); they are the historical record.
+
+If verification passes, the fastsaem fix is ready for merge into
+`claude/python-pk-solver-TXiOg`; if it fails, the failure section is
+the new starting point for the next iteration.
+
 ## Likely first-time failure modes
 
 - **`could not import 'jaxsaem.nlmixr_bridge'`** -- Python env not on
@@ -131,6 +273,10 @@ Tests skip cleanly when `reticulate::py_module_available("jaxsaem")` is
 - **NAMESPACE diff after `devtools::document()`** -- the in-tree
   NAMESPACE is hand-edited to match the roxygen tags in the new files.
   Regenerating should produce the same lines.
+
+- **CL still ~28% biased after the fix** -- pip installed the wrong
+  branch, or a stale wheel is being used. Re-run section 6.2 with
+  `--no-cache-dir` and re-check the `assert 'b_init = '` probe.
 
 ## Supported subset (v0)
 
