@@ -56,7 +56,7 @@ Imports:
     nlme,
     Rcpp,
     rex,
-    rxode2 (> 5.0.0),
+    rxode2 (>= 3.0.0),
     stats,
     symengine,
     utils
@@ -88,7 +88,7 @@ LinkingTo:
     Rcpp,
     RcppArmadillo (>= 0.11.2.3.1),
     RcppEigen,
-    rxode2 (> 5.0.0)
+    rxode2 (>= 3.0.0)
 SystemRequirements: For est = "jaxsaem": Python (>= 3.10) with the
     'jaxsaem' package (https://github.com/a2p2/fastsaem).
 Biarch: true

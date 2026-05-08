@@ -263,7 +263,12 @@ nlmixr2Est0 <- function(env, ...) {
             .msuccess("done")
           }
         } else {
-          stop(.msg, call.=FALSE)
+          .origCond <- attr(get("ret", envir=.envReset), "condition")
+          if (!is.null(.origCond) && !identical(class(.origCond), c("simpleError", "error", "condition"))) {
+            stop(.origCond)
+          } else {
+            stop(.msg, call.=FALSE)
+          }
         }
       }
       if (length(get("reset", envir=.envReset)) != 1) assign("reset", TRUE, .envReset)

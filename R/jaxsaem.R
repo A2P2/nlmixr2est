@@ -203,7 +203,7 @@ attr(nlmixr2Est.jaxsaem, "iov") <- FALSE
   list(
     kind = "lincmt",
     lincmt_topology = .topology,
-    params = as.list(.userParams),
+    params = as.list(unname(.userParams)),
     ini = .ini,
     residual = .residual,
     jax_model = NULL
@@ -221,7 +221,7 @@ attr(nlmixr2Est.jaxsaem, "iov") <- FALSE
 #'   `"oral_2cmt"`, or `NULL`
 #' @noRd
 .detectLinCmtTopology <- function(paramNames) {
-  .s <- sort(paramNames)
+  .s <- sort(unname(paramNames))
   if (identical(.s, sort(c("cl", "v")))) return("iv_1cmt")
   if (identical(.s, sort(c("ka", "cl", "v")))) return("oral_1cmt")
   if (identical(.s, sort(c("cl", "v1", "q", "v2")))) return("iv_2cmt")
